@@ -681,9 +681,7 @@ const PROXY_BASE = 'https://monitor-zeta-navy.vercel.app/api/yahoo';
 
 async function fetchYahooHistory(ticker, periods, interval) {
   interval = interval || 'week';
-  // Para diario necesitamos más períodos de warmup
-  const warmup = interval === 'day' ? 60 : 40;
-  const url = `${PROXY_BASE}?ticker=${ticker}&periods=${periods + warmup}&interval=${interval}`;
+  const url = `${PROXY_BASE}?ticker=${ticker}&periods=${periods + 80}&interval=${interval}`; // 80 períodos warmup para EMA26
   const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
@@ -735,54 +733,83 @@ function filteredETFs() {
   return ETF_LIST.filter(e => activeCats.has(e.cat));
 }
 
-// RS-Ratio & RS-Momentum — método JdK estándar con EMA suavizada
+// RS-Ratio & RS-Momentum — método JdK correcto para trayectoria circular
 function calcJdKRS(prices, benchPrices) {
   const minLen = Math.min(prices.length, benchPrices.length);
   const relPrices = [];
   for (let i = 0; i < minLen; i++) {
     if (prices[i] && benchPrices[i]) relPrices.push(prices[i] / benchPrices[i]);
   }
-  if (relPrices.length < 14) return null;
+  if (relPrices.length < 52) return null;
 
-  // EMA helper
-  const ema = (arr, n) => {
+  // EMA helper — devuelve array del mismo largo que arr (desde índice n-1)
+  const emaFull = (arr, n) => {
     const k = 2 / (n + 1);
-    const result = [];
-    let val = arr.slice(0, n).reduce((a,b) => a+b, 0) / n;
-    result.push(val);
+    const result = new Array(arr.length).fill(null);
+    let val = arr.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    result[n - 1] = val;
     for (let i = n; i < arr.length; i++) {
       val = arr[i] * k + val * (1 - k);
-      result.push(val);
+      result[i] = val;
     }
     return result;
   };
 
-  // RS-Ratio: EMA(10) / EMA(26) de la serie relativa, normalizado a 100
-  const ema10 = ema(relPrices, 10);
-  const ema26 = ema(relPrices, 26);
-  const commonLen = Math.min(ema10.length, ema26.length);
+  // Paso 1: RS = precio / benchmark (serie relativa)
+  // Paso 2: RS-Ratio = EMA(10) de RS / EMA(26) de RS × 100
+  //         Esto ya oscila alrededor de 100 naturalmente
+  const ema10 = emaFull(relPrices, 10);
+  const ema26 = emaFull(relPrices, 26);
 
-  const rsRatioRaw = [];
-  for (let i = 0; i < commonLen; i++) {
-    rsRatioRaw.push(ema26[i] > 0 ? (ema10[i] / ema26[i]) * 100 : 100);
-  }
+  const rsRatio = relPrices.map((_, i) => {
+    if (ema10[i] == null || ema26[i] == null || ema26[i] === 0) return null;
+    // Normalizado: si EMA10 > EMA26 => momentum positivo => > 100
+    return (ema10[i] / ema26[i]) * 100;
+  });
 
-  // RS-Momentum: EMA(10) del RS-Ratio
-  if (rsRatioRaw.length < 10) return null;
-  const rsMomRaw = ema(rsRatioRaw, 10);
+  // Paso 3: RS-Momentum = tasa de cambio del RS-Ratio (período a período)
+  //         RSM[i] = (RSR[i] / RSR[i-1]) * 100
+  //         Oscila alrededor de 100: >100 = acelerando, <100 = desacelerando
+  const rsMomentum = rsRatio.map((v, i) => {
+    if (v == null || i === 0 || rsRatio[i - 1] == null || rsRatio[i - 1] === 0) return null;
+    return (v / rsRatio[i - 1]) * 100;
+  });
 
-  // Normalizar ambas series a centro 100
-  const normalizeTo100 = (arr) => {
-    const mean = arr.reduce((a,b) => a+b,0) / arr.length;
-    return arr.map(v => 100 + (v - mean) / mean * 100);
+  // Paso 4: Suavizar RS-Momentum con EMA(3) para reducir ruido
+  const validRM = rsMomentum.filter(v => v != null);
+  if (validRM.length < 3) return null;
+  const ema3ofRM = emaFull(validRM, 3);
+
+  // Alinear con índices originales
+  let rmIdx = 0;
+  const rsMomSmooth = rsMomentum.map(v => {
+    if (v == null) return null;
+    return ema3ofRM[rmIdx++];
+  });
+
+  // Paso 5: Re-centrar ambas series en 100 usando media del período completo
+  // (preserva la relación entre RS-Ratio y RS-Momentum para la rotación circular)
+  const validRS = rsRatio.filter(v => v != null);
+  const validRMAll = rsMomSmooth.filter(v => v != null);
+  const meanRS = validRS.reduce((a, b) => a + b, 0) / validRS.length;
+  const meanRM = validRMAll.reduce((a, b) => a + b, 0) / validRMAll.length;
+
+  // Escalar para que las variaciones sean visibles pero no exageradas
+  const scaleRS = 100 / meanRS;
+  const scaleRM = 100 / meanRM;
+
+  const rsTrail = rsRatio.map(v => v == null ? null : v * scaleRS);
+  const rmTrail = rsMomSmooth.map(v => v == null ? null : v * scaleRM);
+
+  // Devolver solo pares donde ambos tienen valor
+  const pairs = rsTrail.map((rs, i) => ({
+    rs, rm: rmTrail[i]
+  })).filter(p => p.rs != null && p.rm != null);
+
+  return {
+    rsTrail: pairs.map(p => p.rs),
+    rmTrail: pairs.map(p => p.rm)
   };
-
-  const rsTrail = normalizeTo100(rsRatioRaw);
-  const rmTrail = normalizeTo100(rsMomRaw.concat(
-    Array(rsRatioRaw.length - rsMomRaw.length).fill(rsMomRaw[rsMomRaw.length-1])
-  ).slice(0, rsRatioRaw.length));
-
-  return { rsTrail, rmTrail };
 }
 
 async function loadRRG() {
