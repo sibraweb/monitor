@@ -647,25 +647,40 @@ function onSourceChange() {
   if (src === 'custom') urlField.classList.add('visible');
 }
 
-// Yahoo Finance proxy (no-cors workaround via allorigins)
+// Yahoo Finance — intenta múltiples proxies CORS en orden
 async function fetchYahooHistory(ticker, weeks) {
   const period2 = Math.floor(Date.now() / 1000);
   const period1 = period2 - weeks * 7 * 24 * 3600;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1wk&period1=${period1}&period2=${period2}`;
-  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-  const resp = await fetch(proxy);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const json = await resp.json();
-  const result = json.chart?.result?.[0];
-  if (!result) throw new Error('No data');
-  const timestamps = result.timestamp;
-  const closes = result.indicators.quote[0].close;
-  const volumes = result.indicators.quote[0].volume;
-  return timestamps.map((t, i) => ({
-    date: new Date(t * 1000),
-    close: closes[i],
-    volume: volumes[i] || 0
-  })).filter(d => d.close != null);
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1wk&period1=${period1}&period2=${period2}&events=history`;
+
+  const proxies = [
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  ];
+
+  let lastErr;
+  for (const makeProxy of proxies) {
+    try {
+      const resp = await fetch(makeProxy(yahooUrl), { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const result = json.chart?.result?.[0];
+      if (!result) throw new Error('Sin datos en respuesta');
+      const timestamps = result.timestamp;
+      const closes = result.indicators.quote[0].close;
+      const volumes = result.indicators.quote[0].volume;
+      return timestamps.map((t, i) => ({
+        date: new Date(t * 1000),
+        close: closes[i],
+        volume: volumes[i] || 0
+      })).filter(d => d.close != null);
+    } catch(e) {
+      lastErr = e;
+      console.warn(`Proxy falló para ${ticker}:`, e.message);
+    }
+  }
+  throw new Error(`No se pudo obtener datos para ${ticker}: ${lastErr?.message}`);
 }
 
 // ════════════════════════════════════════════════
@@ -782,7 +797,9 @@ async function loadRRG() {
     document.getElementById('rrg-period-label').textContent = `${weeks} semanas`;
   } catch(e) {
     console.error('RRG load error:', e);
-    alert('Error cargando datos: ' + e.message);
+    const el = document.getElementById('rrg-last-update');
+    el.textContent = '⚠ Error: ' + e.message;
+    el.style.color = '#E10600';
   }
 
   document.getElementById('rrg-loading').style.display = 'none';
