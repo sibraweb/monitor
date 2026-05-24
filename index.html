@@ -733,78 +733,57 @@ function filteredETFs() {
   return ETF_LIST.filter(e => activeCats.has(e.cat));
 }
 
-// RS-Ratio & RS-Momentum — método JdK correcto para trayectoria circular
+// RS-Ratio & RS-Momentum — fórmula JdK original con WMA doble
 function calcJdKRS(prices, benchPrices) {
   const minLen = Math.min(prices.length, benchPrices.length);
   const relPrices = [];
   for (let i = 0; i < minLen; i++) {
     if (prices[i] && benchPrices[i]) relPrices.push(prices[i] / benchPrices[i]);
   }
-  if (relPrices.length < 52) return null;
+  if (relPrices.length < 60) return null;
 
-  // EMA helper — devuelve array del mismo largo que arr (desde índice n-1)
-  const emaFull = (arr, n) => {
-    const k = 2 / (n + 1);
+  // WMA helper — Weighted Moving Average
+  const wma = (arr, n) => {
     const result = new Array(arr.length).fill(null);
-    let val = arr.slice(0, n).reduce((a, b) => a + b, 0) / n;
-    result[n - 1] = val;
-    for (let i = n; i < arr.length; i++) {
-      val = arr[i] * k + val * (1 - k);
-      result[i] = val;
+    for (let i = n - 1; i < arr.length; i++) {
+      let num = 0, den = 0;
+      for (let j = 0; j < n; j++) {
+        const w = n - j;
+        num += arr[i - j] * w;
+        den += w;
+      }
+      result[i] = num / den;
     }
     return result;
   };
 
-  // Paso 1: RS = precio / benchmark (serie relativa)
-  // Paso 2: RS-Ratio = EMA(10) de RS / EMA(26) de RS × 100
-  //         Esto ya oscila alrededor de 100 naturalmente
-  const ema10 = emaFull(relPrices, 10);
-  const ema26 = emaFull(relPrices, 26);
+  const PERIOD = 10; // período estándar JdK
 
-  const rsRatio = relPrices.map((_, i) => {
-    if (ema10[i] == null || ema26[i] == null || ema26[i] === 0) return null;
-    // Normalizado: si EMA10 > EMA26 => momentum positivo => > 100
-    return (ema10[i] / ema26[i]) * 100;
-  });
+  // RS-Ratio = WMA( RS / WMA(RS, period), period ) × 100
+  const wmaRS = wma(relPrices, PERIOD);
+  const rsNorm = relPrices.map((v, i) =>
+    wmaRS[i] != null && wmaRS[i] !== 0 ? v / wmaRS[i] : null
+  );
+  const rsNormClean = rsNorm.map(v => v ?? 0);
+  const wmaRsNorm = wma(rsNormClean, PERIOD);
+  const rsRatio = wmaRsNorm.map(v => v != null ? v * 100 : null);
 
-  // Paso 3: RS-Momentum = tasa de cambio del RS-Ratio (período a período)
-  //         RSM[i] = (RSR[i] / RSR[i-1]) * 100
-  //         Oscila alrededor de 100: >100 = acelerando, <100 = desacelerando
-  const rsMomentum = rsRatio.map((v, i) => {
-    if (v == null || i === 0 || rsRatio[i - 1] == null || rsRatio[i - 1] === 0) return null;
-    return (v / rsRatio[i - 1]) * 100;
-  });
+  // RS-Momentum = WMA( RS-Ratio / WMA(RS-Ratio, period), period ) × 100
+  const rsRatioClean = rsRatio.map(v => v ?? 0);
+  const wmaRsRatio = wma(rsRatioClean, PERIOD);
+  const rsMomNorm = rsRatio.map((v, i) =>
+    v != null && wmaRsRatio[i] != null && wmaRsRatio[i] !== 0
+      ? v / wmaRsRatio[i] : null
+  );
+  const rsMomClean = rsMomNorm.map(v => v ?? 0);
+  const wmaRsMom = wma(rsMomClean, PERIOD);
+  const rsMomentum = wmaRsMom.map(v => v != null ? v * 100 : null);
 
-  // Paso 4: Suavizar RS-Momentum con EMA(3) para reducir ruido
-  const validRM = rsMomentum.filter(v => v != null);
-  if (validRM.length < 3) return null;
-  const ema3ofRM = emaFull(validRM, 3);
+  // Filtrar pares válidos
+  const pairs = rsRatio.map((rs, i) => ({ rs, rm: rsMomentum[i] }))
+    .filter(p => p.rs != null && p.rm != null);
 
-  // Alinear con índices originales
-  let rmIdx = 0;
-  const rsMomSmooth = rsMomentum.map(v => {
-    if (v == null) return null;
-    return ema3ofRM[rmIdx++];
-  });
-
-  // Paso 5: Re-centrar ambas series en 100 usando media del período completo
-  // (preserva la relación entre RS-Ratio y RS-Momentum para la rotación circular)
-  const validRS = rsRatio.filter(v => v != null);
-  const validRMAll = rsMomSmooth.filter(v => v != null);
-  const meanRS = validRS.reduce((a, b) => a + b, 0) / validRS.length;
-  const meanRM = validRMAll.reduce((a, b) => a + b, 0) / validRMAll.length;
-
-  // Escalar para que las variaciones sean visibles pero no exageradas
-  const scaleRS = 100 / meanRS;
-  const scaleRM = 100 / meanRM;
-
-  const rsTrail = rsRatio.map(v => v == null ? null : v * scaleRS);
-  const rmTrail = rsMomSmooth.map(v => v == null ? null : v * scaleRM);
-
-  // Devolver solo pares donde ambos tienen valor
-  const pairs = rsTrail.map((rs, i) => ({
-    rs, rm: rmTrail[i]
-  })).filter(p => p.rs != null && p.rm != null);
+  if (pairs.length < 10) return null;
 
   return {
     rsTrail: pairs.map(p => p.rs),
