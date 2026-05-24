@@ -376,6 +376,27 @@
     opacity: 0.5;
   }
 
+  /* ─── INTERVAL BUTTONS ─── */
+  .interval-btn {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.3px;
+  }
+  .interval-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .interval-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
   /* ─── SCROLLBAR ─── */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
@@ -428,8 +449,16 @@
     </div>
     <div class="ctrl-divider"></div>
     <div class="ctrl-group">
-      <label>Semanas</label>
-      <input type="number" id="rrg-weeks" class="ctrl-input" value="10" min="4" max="52" style="width:70px">
+      <label>Intervalo</label>
+      <div style="display:flex;gap:4px">
+        <button class="interval-btn active" data-interval="week" onclick="setInterval(this)">Semanal</button>
+        <button class="interval-btn" data-interval="day" onclick="setInterval(this)">Diario</button>
+      </div>
+    </div>
+    <div class="ctrl-divider"></div>
+    <div class="ctrl-group">
+      <label id="rrg-periods-label">Períodos</label>
+      <input type="number" id="rrg-weeks" class="ctrl-input" value="10" min="4" max="120" style="width:70px">
     </div>
     <div class="ctrl-divider"></div>
     <button class="btn-primary" onclick="loadRRG()">▶ Actualizar</button>
@@ -650,8 +679,11 @@ function onSourceChange() {
 // Yahoo Finance — via proxy propio en Vercel
 const PROXY_BASE = 'https://monitor-zeta-navy.vercel.app/api/yahoo';
 
-async function fetchYahooHistory(ticker, weeks) {
-  const url = `${PROXY_BASE}?ticker=${ticker}&weeks=${weeks + 10}`;
+async function fetchYahooHistory(ticker, periods, interval) {
+  interval = interval || 'week';
+  // Para diario necesitamos más períodos de warmup
+  const warmup = interval === 'day' ? 60 : 40;
+  const url = `${PROXY_BASE}?ticker=${ticker}&periods=${periods + warmup}&interval=${interval}`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
@@ -703,47 +735,67 @@ function filteredETFs() {
   return ETF_LIST.filter(e => activeCats.has(e.cat));
 }
 
-// RS-Ratio & RS-Momentum via JdK RS calculation
+// RS-Ratio & RS-Momentum — método JdK estándar con EMA suavizada
 function calcJdKRS(prices, benchPrices) {
-  // Relative price series
   const minLen = Math.min(prices.length, benchPrices.length);
   const relPrices = [];
   for (let i = 0; i < minLen; i++) {
     if (prices[i] && benchPrices[i]) relPrices.push(prices[i] / benchPrices[i]);
   }
-  if (relPrices.length < 4) return null;
-  // Simple normalization to 100-based RS-Ratio using 4-period EMA ratio
+  if (relPrices.length < 14) return null;
+
+  // EMA helper
   const ema = (arr, n) => {
     const k = 2 / (n + 1);
+    const result = [];
     let val = arr.slice(0, n).reduce((a,b) => a+b, 0) / n;
-    for (let i = n; i < arr.length; i++) val = arr[i] * k + val * (1 - k);
-    return val;
+    result.push(val);
+    for (let i = n; i < arr.length; i++) {
+      val = arr[i] * k + val * (1 - k);
+      result.push(val);
+    }
+    return result;
   };
-  const trail = [];
-  for (let i = 4; i <= relPrices.length; i++) {
-    const slice = relPrices.slice(0, i);
-    const mean = slice.reduce((a,b) => a+b, 0) / slice.length;
-    const rs = (relPrices[i-1] / mean) * 100;
-    trail.push(rs);
+
+  // RS-Ratio: EMA(10) / EMA(26) de la serie relativa, normalizado a 100
+  const ema10 = ema(relPrices, 10);
+  const ema26 = ema(relPrices, 26);
+  const commonLen = Math.min(ema10.length, ema26.length);
+
+  const rsRatioRaw = [];
+  for (let i = 0; i < commonLen; i++) {
+    rsRatioRaw.push(ema26[i] > 0 ? (ema10[i] / ema26[i]) * 100 : 100);
   }
-  // RS-Momentum = rate of change of RS-Ratio
-  const rmTrail = trail.map((v, i) => {
-    if (i === 0) return 100;
-    return (v / trail[i-1]) * 100;
-  });
-  return { rsTrail: trail, rmTrail };
+
+  // RS-Momentum: EMA(10) del RS-Ratio
+  if (rsRatioRaw.length < 10) return null;
+  const rsMomRaw = ema(rsRatioRaw, 10);
+
+  // Normalizar ambas series a centro 100
+  const normalizeTo100 = (arr) => {
+    const mean = arr.reduce((a,b) => a+b,0) / arr.length;
+    return arr.map(v => 100 + (v - mean) / mean * 100);
+  };
+
+  const rsTrail = normalizeTo100(rsRatioRaw);
+  const rmTrail = normalizeTo100(rsMomRaw.concat(
+    Array(rsRatioRaw.length - rsMomRaw.length).fill(rsMomRaw[rsMomRaw.length-1])
+  ).slice(0, rsRatioRaw.length));
+
+  return { rsTrail, rmTrail };
 }
 
 async function loadRRG() {
   const benchmark = document.getElementById('rrg-benchmark').value.trim().toUpperCase() || 'SPY';
   const weeks = parseInt(document.getElementById('rrg-weeks').value) || 10;
+  const interval = document.querySelector('.interval-btn.active')?.dataset.interval || 'week';
   document.getElementById('rrg-bench-badge').textContent = `vs ${benchmark}`;
   document.getElementById('rrg-loading').style.display = 'flex';
   rrgData = [];
 
   try {
     // Fetch benchmark
-    const benchHistory = await fetchYahooHistory(benchmark, weeks + 10);
+    const benchHistory = await fetchYahooHistory(benchmark, weeks, interval);
     const benchCloses = benchHistory.map(d => d.close);
 
     const etfs = filteredETFs().filter(e => e.ticker !== benchmark);
@@ -751,7 +803,7 @@ async function loadRRG() {
 
     for (const etf of etfs) {
       try {
-        const hist = await fetchYahooHistory(etf.ticker, weeks + 10);
+        const hist = await fetchYahooHistory(etf.ticker, weeks, interval);
         const closes = hist.map(d => d.close);
         const volumes = hist.map(d => d.volume);
         const avgVol = volumes.slice(-4).reduce((a,b) => a+b, 0) / 4;
@@ -794,8 +846,31 @@ async function loadRRG() {
 function resetRRG() {
   document.getElementById('rrg-benchmark').value = 'SPY';
   document.getElementById('rrg-weeks').value = '10';
+  document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.interval-btn[data-interval="week"]').classList.add('active');
+  document.getElementById('rrg-periods-label').textContent = 'Períodos';
   rrgData = [];
   drawRRG();
+}
+
+// ════════════════════════════════════════════════
+// INTERVAL SELECTOR
+// ════════════════════════════════════════════════
+function setInterval(btn) {
+  document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const interval = btn.dataset.interval;
+  const label = document.getElementById('rrg-periods-label');
+  const input = document.getElementById('rrg-weeks');
+  if (interval === 'day') {
+    label.textContent = 'Días';
+    input.value = 20;
+    input.max = 250;
+  } else {
+    label.textContent = 'Semanas';
+    input.value = 10;
+    input.max = 52;
+  }
 }
 
 // ════════════════════════════════════════════════
