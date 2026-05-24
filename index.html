@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF Dashboard — Sibratech</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Raleway:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #EDEDEE;
+    --bg-mid:    #D8D8DA;
+    --panel:     #2E2E32;
+    --panel-2:   #3A3A3F;
+    --chart-bg:  #1A1A1E;
+    --accent:    #E10600;
+    --accent-dim:#9A0500;
+    --text:      #1A1A1E;
+    --text-light:#6B6B72;
+    --text-inv:  #F0F0F2;
+    --text-muted:#9A9AA2;
+    --border:    #C8C8CC;
+    --border-dark:#4A4A50;
+    --green:     #00C896;
+    --red:       #E10600;
+    --yellow:    #F5A623;
+    --blue:      #4A90D9;
+    --radius:    8px;
+    --radius-lg: 14px;
+    --shadow:    0 2px 12px rgba(0,0,0,0.10);
+    --shadow-md: 0 4px 24px rgba(0,0,0,0.16);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'Montserrat', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── HEADER ─── */
+  header {
+    background: var(--panel);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    height: 58px;
+    border-bottom: 2px solid var(--accent);
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: var(--shadow-md);
+  }
+  .logo {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text-inv);
+    letter-spacing: 1px;
+  }
+  .logo span { color: var(--accent); }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .data-source-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .data-source-selector select {
+    background: var(--panel-2);
+    border: 1px solid var(--border-dark);
+    color: var(--text-inv);
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    outline: none;
+  }
+  .api-key-input {
+    background: var(--panel-2);
+    border: 1px solid var(--border-dark);
+    color: var(--text-inv);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    width: 160px;
+    outline: none;
+    display: none;
+  }
+  .api-key-input.visible { display: block; }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:0.4; }
+  }
+
+  /* ─── TABS ─── */
+  nav.tabs {
+    background: var(--panel);
+    display: flex;
+    padding: 0 32px;
+    gap: 2px;
+    border-bottom: 1px solid var(--border-dark);
+  }
+  .tab-btn {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 10px 18px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text-inv); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ─── TAB CONTENT ─── */
+  .tab-content { display: none; padding: 24px 32px; }
+  .tab-content.active { display: block; }
+
+  /* ─── CONTROLS BAR ─── */
+  .controls-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    background: white;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-light);
+    font-weight: 500;
+  }
+  .ctrl-group label { white-space: nowrap; }
+  .ctrl-input, .ctrl-select {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .ctrl-input:focus, .ctrl-select:focus {
+    border-color: var(--accent);
+  }
+  .ctrl-input { width: 90px; }
+  .ctrl-divider {
+    width: 1px; height: 24px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: var(--radius);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .btn-primary:hover { background: var(--accent-dim); }
+  .btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ─── FILTER CHIPS ─── */
+  .filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .chip {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  /* ─── RRG CANVAS WRAPPER ─── */
+  .rrg-wrapper {
+    background: var(--chart-bg);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-dark);
+    position: relative;
+  }
+  .rrg-title {
+    font-family: 'Raleway', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .rrg-title .benchmark-badge {
+    background: rgba(225,6,0,0.15);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  #rrg-canvas {
+    display: block;
+    width: 100%;
+    cursor: crosshair;
+  }
+  .rrg-legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .rrg-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .rrg-legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  /* ─── TOOLTIP ─── */
+  .rrg-tooltip {
+    position: absolute;
+    background: var(--panel);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--text-inv);
+    pointer-events: none;
+    display: none;
+    z-index: 50;
+    box-shadow: var(--shadow-md);
+    min-width: 140px;
+  }
+  .rrg-tooltip .tt-ticker {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .rrg-tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+  .rrg-tooltip .tt-row span:last-child { color: var(--text-inv); font-weight: 500; }
+
+  /* ─── LOADING ─── */
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(26,26,30,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    z-index: 20;
+    gap: 12px;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border-dark);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay p {
+    color: var(--text-muted);
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  /* ─── PLACEHOLDER TABS ─── */
+  .coming-soon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 16px;
+    color: var(--text-light);
+  }
+  .coming-soon .cs-icon {
+    font-size: 48px;
+    opacity: 0.3;
+  }
+  .coming-soon h3 {
+    font-family: 'Raleway', sans-serif;
+    font-size: 18px;
+    color: var(--text);
+    opacity: 0.5;
+  }
+  .coming-soon p {
+    font-size: 12px;
+    opacity: 0.5;
+  }
+
+  /* ─── SCROLLBAR ─── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">SIBRA<span>TECH</span> · ETF Dashboard</div>
+  <div class="header-right">
+    <div class="data-source-selector">
+      <span>Fuente:</span>
+      <select id="global-source" onchange="onSourceChange()">
+        <option value="yahoo">Yahoo Finance</option>
+        <option value="alphavantage">Alpha Vantage</option>
+        <option value="data912">data912 (ARG)</option>
+        <option value="custom">API propia</option>
+      </select>
+      <input type="text" id="api-key-field" class="api-key-input" placeholder="API Key…">
+      <input type="text" id="custom-api-url" class="api-key-input" placeholder="https://mi-api.com/…" style="width:200px">
+    </div>
+    <div class="status-dot" id="status-dot" title="Conectado"></div>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs">
+  <button class="tab-btn active" onclick="switchTab('rrg',this)">RRG</button>
+  <button class="tab-btn" onclick="switchTab('heatmap',this)">Heatmap</button>
+  <button class="tab-btn" onclick="switchTab('etf-holdings',this)">ETF vs Holdings</button>
+  <button class="tab-btn" onclick="switchTab('comparador',this)">Comparador</button>
+  <button class="tab-btn" onclick="switchTab('drawdown',this)">Drawdowns</button>
+  <button class="tab-btn" onclick="switchTab('outperforming',this)">Outperforming</button>
+  <button class="tab-btn" onclick="switchTab('screener',this)">S&P 500 Screener</button>
+</nav>
+
+<!-- ══════════════════════════════════════════
+     TAB 1 — RRG
+══════════════════════════════════════════ -->
+<div id="tab-rrg" class="tab-content active">
+
+  <!-- Controls -->
+  <div class="controls-bar">
+    <div class="ctrl-group">
+      <label>Benchmark</label>
+      <input type="text" id="rrg-benchmark" class="ctrl-input" value="SPY" placeholder="SPY">
+    </div>
+    <div class="ctrl-divider"></div>
+    <div class="ctrl-group">
+      <label>Semanas</label>
+      <input type="number" id="rrg-weeks" class="ctrl-input" value="10" min="4" max="52" style="width:70px">
+    </div>
+    <div class="ctrl-divider"></div>
+    <button class="btn-primary" onclick="loadRRG()">▶ Actualizar</button>
+    <button class="btn-secondary" onclick="resetRRG()">Reset</button>
+    <div style="margin-left:auto; font-size:10px; color:var(--text-light)" id="rrg-last-update"></div>
+  </div>
+
+  <!-- Category filters -->
+  <div class="filter-chips" id="rrg-filters">
+    <span class="chip active" data-cat="all" onclick="toggleCat(this)">Todos</span>
+    <span class="chip" data-cat="Sector S&P 500" onclick="toggleCat(this)">Sectores S&P</span>
+    <span class="chip" data-cat="Metal Precioso" onclick="toggleCat(this)">Metales Preciosos</span>
+    <span class="chip" data-cat="Commodity" onclick="toggleCat(this)">Commodities</span>
+    <span class="chip" data-cat="Mercado" onclick="toggleCat(this)">Mercados</span>
+    <span class="chip" data-cat="Temático" onclick="toggleCat(this)">Temáticos</span>
+    <span class="chip" data-cat="Renta Fija" onclick="toggleCat(this)">Renta Fija</span>
+  </div>
+
+  <!-- RRG Chart -->
+  <div class="rrg-wrapper" id="rrg-wrapper">
+    <div class="rrg-title">
+      Relative Rotation Graph
+      <span class="benchmark-badge" id="rrg-bench-badge">vs SPY</span>
+      <span style="margin-left:auto;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)" id="rrg-period-label"></span>
+    </div>
+    <canvas id="rrg-canvas" height="560"></canvas>
+    <div class="rrg-tooltip" id="rrg-tooltip"></div>
+    <div class="loading-overlay" id="rrg-loading">
+      <div class="spinner"></div>
+      <p>Cargando datos…</p>
+    </div>
+    <div class="rrg-legend">
+      <div class="rrg-legend-item"><div class="rrg-legend-dot" style="background:#00C896"></div>Leading</div>
+      <div class="rrg-legend-item"><div class="rrg-legend-dot" style="background:#F5A623"></div>Weakening</div>
+      <div class="rrg-legend-item"><div class="rrg-legend-dot" style="background:#E10600"></div>Lagging</div>
+      <div class="rrg-legend-item"><div class="rrg-legend-dot" style="background:#4A90D9"></div>Improving</div>
+      <div class="rrg-legend-item" style="margin-left:16px">
+        <svg width="24" height="10"><circle cx="5" cy="5" r="5" fill="rgba(255,255,255,0.15)" stroke="white" stroke-width="1"/><circle cx="19" cy="5" r="8" fill="rgba(255,255,255,0.25)" stroke="white" stroke-width="1"/></svg>
+        Tamaño = Volumen
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 2 — HEATMAP
+══════════════════════════════════════════ -->
+<div id="tab-heatmap" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">🟥</div>
+    <h3>Heatmap de Rendimientos</h3>
+    <p>Próximamente — rendimientos mensuales por activo</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 3 — ETF vs HOLDINGS
+══════════════════════════════════════════ -->
+<div id="tab-etf-holdings" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">📊</div>
+    <h3>ETF vs Holdings</h3>
+    <p>Próximamente — comparación de componentes contra el ETF</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 4 — COMPARADOR
+══════════════════════════════════════════ -->
+<div id="tab-comparador" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">⚖️</div>
+    <h3>Comparador Libre</h3>
+    <p>Próximamente — cualquier ticker vs cualquier ticker</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 5 — DRAWDOWNS
+══════════════════════════════════════════ -->
+<div id="tab-drawdown" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">📉</div>
+    <h3>Drawdowns</h3>
+    <p>Próximamente — máximo DD, DD promedio y DD actual</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 6 — OUTPERFORMING
+══════════════════════════════════════════ -->
+<div id="tab-outperforming" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">🎯</div>
+    <h3>Outperforming</h3>
+    <p>Próximamente — distancia desde piso, máximo, MA20/50/200</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 7 — S&P 500 SCREENER
+══════════════════════════════════════════ -->
+<div id="tab-screener" class="tab-content">
+  <div class="coming-soon">
+    <div class="cs-icon">🔍</div>
+    <h3>S&P 500 Screener</h3>
+    <p>Próximamente — filtros P/E, drawdown actual, MA200</p>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+// ETF UNIVERSE
+// ════════════════════════════════════════════════
+const ETF_LIST = [
+  // Sector S&P 500
+  {ticker:'XLK', name:'Technology Select Sector', cat:'Sector S&P 500', subcat:'Tecnología'},
+  {ticker:'XLF', name:'Financial Select Sector', cat:'Sector S&P 500', subcat:'Financiero'},
+  {ticker:'XLV', name:'Health Care Select Sector', cat:'Sector S&P 500', subcat:'Salud'},
+  {ticker:'XLE', name:'Energy Select Sector', cat:'Sector S&P 500', subcat:'Energía'},
+  {ticker:'XLI', name:'Industrial Select Sector', cat:'Sector S&P 500', subcat:'Industrial'},
+  {ticker:'XLY', name:'Consumer Discretionary SPDR', cat:'Sector S&P 500', subcat:'Consumo Discrecional'},
+  {ticker:'XLP', name:'Consumer Staples SPDR', cat:'Sector S&P 500', subcat:'Consumo Básico'},
+  {ticker:'XLB', name:'Materials Select Sector', cat:'Sector S&P 500', subcat:'Materiales'},
+  {ticker:'XLU', name:'Utilities Select Sector', cat:'Sector S&P 500', subcat:'Utilities'},
+  {ticker:'XLRE', name:'Real Estate Select Sector', cat:'Sector S&P 500', subcat:'Real Estate'},
+  {ticker:'XLC', name:'Communication Services SPDR', cat:'Sector S&P 500', subcat:'Comunicaciones'},
+  // Metales Preciosos
+  {ticker:'GLD', name:'SPDR Gold Shares', cat:'Metal Precioso', subcat:'Oro'},
+  {ticker:'IAU', name:'iShares Gold Trust', cat:'Metal Precioso', subcat:'Oro'},
+  {ticker:'SLV', name:'iShares Silver Trust', cat:'Metal Precioso', subcat:'Plata'},
+  {ticker:'PPLT', name:'Aberdeen Platinum ETF', cat:'Metal Precioso', subcat:'Platino'},
+  {ticker:'PALL', name:'Aberdeen Palladium ETF', cat:'Metal Precioso', subcat:'Paladio'},
+  {ticker:'GDX', name:'VanEck Gold Miners ETF', cat:'Metal Precioso', subcat:'Mineras de Oro'},
+  // Commodities Energía
+  {ticker:'USO', name:'United States Oil Fund', cat:'Commodity', subcat:'Energía'},
+  {ticker:'BNO', name:'United States Brent Oil Fund', cat:'Commodity', subcat:'Energía'},
+  {ticker:'UNG', name:'United States Natural Gas Fund', cat:'Commodity', subcat:'Energía'},
+  {ticker:'DBO', name:'Invesco DB Oil Fund', cat:'Commodity', subcat:'Energía'},
+  // Commodities Agricultura
+  {ticker:'CORN', name:'Teucrium Corn Fund', cat:'Commodity', subcat:'Agricultura'},
+  {ticker:'WEAT', name:'Teucrium Wheat Fund', cat:'Commodity', subcat:'Agricultura'},
+  {ticker:'SOYB', name:'Teucrium Soybean Fund', cat:'Commodity', subcat:'Agricultura'},
+  {ticker:'DBA', name:'Invesco DB Agriculture Fund', cat:'Commodity', subcat:'Agricultura'},
+  // Commodities Metales Industriales
+  {ticker:'CPER', name:'United States Copper Index', cat:'Commodity', subcat:'Metales Industriales'},
+  {ticker:'DBB', name:'Invesco DB Base Metals Fund', cat:'Commodity', subcat:'Metales Industriales'},
+  {ticker:'REMX', name:'VanEck Rare Earth/Metals', cat:'Commodity', subcat:'Metales Industriales'},
+  // Commodities Diversificado
+  {ticker:'DBC', name:'Invesco DB Commodity Index', cat:'Commodity', subcat:'Diversificado'},
+  {ticker:'PDBC', name:'Invesco Optimum Yield Commodity', cat:'Commodity', subcat:'Diversificado'},
+  {ticker:'COMT', name:'iShares GSCI Commodity Dynamic', cat:'Commodity', subcat:'Diversificado'},
+  // Mercados Emergentes
+  {ticker:'EEM', name:'iShares MSCI Emerging Markets', cat:'Mercado', subcat:'Emergentes'},
+  {ticker:'VWO', name:'Vanguard FTSE Emerging Markets', cat:'Mercado', subcat:'Emergentes'},
+  {ticker:'IEMG', name:'iShares Core MSCI Emerging Markets', cat:'Mercado', subcat:'Emergentes'},
+  // Países LatAm
+  {ticker:'EWZ', name:'iShares MSCI Brazil', cat:'Mercado', subcat:'País - LatAm'},
+  {ticker:'EWW', name:'iShares MSCI Mexico', cat:'Mercado', subcat:'País - LatAm'},
+  {ticker:'ARGT', name:'Global X MSCI Argentina', cat:'Mercado', subcat:'País - LatAm'},
+  // Países Asia
+  {ticker:'MCHI', name:'iShares MSCI China', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'KWEB', name:'KraneShares CSI China Internet', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'EWJ', name:'iShares MSCI Japan', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'EWY', name:'iShares MSCI South Korea', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'EWT', name:'iShares MSCI Taiwan', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'INDA', name:'iShares MSCI India', cat:'Mercado', subcat:'País - Asia'},
+  {ticker:'VNM', name:'VanEck Vietnam ETF', cat:'Mercado', subcat:'País - Asia'},
+  // Países Europa / Otros
+  {ticker:'EWG', name:'iShares MSCI Germany', cat:'Mercado', subcat:'País - Europa'},
+  {ticker:'EWU', name:'iShares MSCI United Kingdom', cat:'Mercado', subcat:'País - Europa'},
+  {ticker:'EWC', name:'iShares MSCI Canada', cat:'Mercado', subcat:'País - América del Norte'},
+  {ticker:'EWA', name:'iShares MSCI Australia', cat:'Mercado', subcat:'País - Oceanía'},
+  {ticker:'EZA', name:'iShares MSCI South Africa', cat:'Mercado', subcat:'País - África'},
+  // Global / EE.UU.
+  {ticker:'VT', name:'Vanguard Total World Stock', cat:'Mercado', subcat:'Global'},
+  {ticker:'ACWI', name:'iShares MSCI ACWI', cat:'Mercado', subcat:'Global'},
+  {ticker:'EFA', name:'iShares MSCI EAFE', cat:'Mercado', subcat:'Desarrollados ex-EE.UU.'},
+  {ticker:'VEA', name:'Vanguard FTSE Developed Markets', cat:'Mercado', subcat:'Desarrollados ex-EE.UU.'},
+  {ticker:'SPY', name:'SPDR S&P 500 ETF', cat:'Mercado', subcat:'EE.UU.'},
+  {ticker:'QQQ', name:'Invesco Nasdaq-100 ETF', cat:'Mercado', subcat:'EE.UU.'},
+  {ticker:'IWM', name:'iShares Russell 2000 ETF', cat:'Mercado', subcat:'EE.UU.'},
+  // Temáticos
+  {ticker:'ICLN', name:'iShares Global Clean Energy', cat:'Temático', subcat:'Energía Limpia'},
+  {ticker:'LIT', name:'Global X Lithium & Battery Tech', cat:'Temático', subcat:'Litio / Baterías'},
+  {ticker:'ARKK', name:'ARK Innovation ETF', cat:'Temático', subcat:'Innovación'},
+  {ticker:'ROBO', name:'ROBO Global Robotics & AI', cat:'Temático', subcat:'Robótica / IA'},
+  {ticker:'SKYY', name:'First Trust Cloud Computing', cat:'Temático', subcat:'Cloud'},
+  {ticker:'HACK', name:'ETFMG Prime Cyber Security', cat:'Temático', subcat:'Ciberseguridad'},
+  // Renta Fija
+  {ticker:'TLT', name:'iShares 20+ Year Treasury Bond', cat:'Renta Fija', subcat:'Bonos Tesoro Largo'},
+  {ticker:'HYG', name:'iShares iBoxx High Yield Corp', cat:'Renta Fija', subcat:'High Yield'},
+];
+
+// ════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ════════════════════════════════════════════════
+// DATA SOURCE
+// ════════════════════════════════════════════════
+function onSourceChange() {
+  const src = document.getElementById('global-source').value;
+  const keyField = document.getElementById('api-key-field');
+  const urlField = document.getElementById('custom-api-url');
+  keyField.classList.remove('visible');
+  urlField.classList.remove('visible');
+  if (src === 'alphavantage') keyField.classList.add('visible');
+  if (src === 'custom') urlField.classList.add('visible');
+}
+
+// Yahoo Finance proxy (no-cors workaround via allorigins)
+async function fetchYahooHistory(ticker, weeks) {
+  const period2 = Math.floor(Date.now() / 1000);
+  const period1 = period2 - weeks * 7 * 24 * 3600;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1wk&period1=${period1}&period2=${period2}`;
+  const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const resp = await fetch(proxy);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
+  const result = json.chart?.result?.[0];
+  if (!result) throw new Error('No data');
+  const timestamps = result.timestamp;
+  const closes = result.indicators.quote[0].close;
+  const volumes = result.indicators.quote[0].volume;
+  return timestamps.map((t, i) => ({
+    date: new Date(t * 1000),
+    close: closes[i],
+    volume: volumes[i] || 0
+  })).filter(d => d.close != null);
+}
+
+// ════════════════════════════════════════════════
+// RRG LOGIC
+// ════════════════════════════════════════════════
+let rrgData = [];   // [{ticker, cat, trail:[{rs,rm}], curRS, curRM, curVol}]
+let activeCats = new Set(['all']);
+
+function toggleCat(el) {
+  const cat = el.dataset.cat;
+  if (cat === 'all') {
+    activeCats = new Set(['all']);
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+  } else {
+    activeCats.delete('all');
+    document.querySelector('.chip[data-cat="all"]').classList.remove('active');
+    if (activeCats.has(cat)) {
+      activeCats.delete(cat);
+      el.classList.remove('active');
+      if (activeCats.size === 0) {
+        activeCats.add('all');
+        document.querySelector('.chip[data-cat="all"]').classList.add('active');
+      }
+    } else {
+      activeCats.add(cat);
+      el.classList.add('active');
+    }
+  }
+  drawRRG();
+}
+
+function filteredETFs() {
+  if (activeCats.has('all')) return ETF_LIST;
+  return ETF_LIST.filter(e => activeCats.has(e.cat));
+}
+
+// RS-Ratio & RS-Momentum via JdK RS calculation
+function calcJdKRS(prices, benchPrices) {
+  // Relative price series
+  const minLen = Math.min(prices.length, benchPrices.length);
+  const relPrices = [];
+  for (let i = 0; i < minLen; i++) {
+    if (prices[i] && benchPrices[i]) relPrices.push(prices[i] / benchPrices[i]);
+  }
+  if (relPrices.length < 4) return null;
+  // Simple normalization to 100-based RS-Ratio using 4-period EMA ratio
+  const ema = (arr, n) => {
+    const k = 2 / (n + 1);
+    let val = arr.slice(0, n).reduce((a,b) => a+b, 0) / n;
+    for (let i = n; i < arr.length; i++) val = arr[i] * k + val * (1 - k);
+    return val;
+  };
+  const trail = [];
+  for (let i = 4; i <= relPrices.length; i++) {
+    const slice = relPrices.slice(0, i);
+    const mean = slice.reduce((a,b) => a+b, 0) / slice.length;
+    const rs = (relPrices[i-1] / mean) * 100;
+    trail.push(rs);
+  }
+  // RS-Momentum = rate of change of RS-Ratio
+  const rmTrail = trail.map((v, i) => {
+    if (i === 0) return 100;
+    return (v / trail[i-1]) * 100;
+  });
+  return { rsTrail: trail, rmTrail };
+}
+
+async function loadRRG() {
+  const benchmark = document.getElementById('rrg-benchmark').value.trim().toUpperCase() || 'SPY';
+  const weeks = parseInt(document.getElementById('rrg-weeks').value) || 10;
+  document.getElementById('rrg-bench-badge').textContent = `vs ${benchmark}`;
+  document.getElementById('rrg-loading').style.display = 'flex';
+  rrgData = [];
+
+  try {
+    // Fetch benchmark
+    const benchHistory = await fetchYahooHistory(benchmark, weeks + 10);
+    const benchCloses = benchHistory.map(d => d.close);
+
+    const etfs = filteredETFs().filter(e => e.ticker !== benchmark);
+    const results = [];
+
+    for (const etf of etfs) {
+      try {
+        const hist = await fetchYahooHistory(etf.ticker, weeks + 10);
+        const closes = hist.map(d => d.close);
+        const volumes = hist.map(d => d.volume);
+        const avgVol = volumes.slice(-4).reduce((a,b) => a+b, 0) / 4;
+
+        const minLen = Math.min(closes.length, benchCloses.length);
+        const rs = calcJdKRS(closes.slice(-minLen), benchCloses.slice(-minLen));
+        if (!rs) continue;
+
+        const trailLen = Math.min(weeks, rs.rsTrail.length);
+        const trail = [];
+        for (let i = rs.rsTrail.length - trailLen; i < rs.rsTrail.length; i++) {
+          trail.push({ rs: rs.rsTrail[i], rm: rs.rmTrail[i] });
+        }
+        results.push({
+          ticker: etf.ticker,
+          cat: etf.cat,
+          trail,
+          curRS: trail[trail.length - 1]?.rs ?? 100,
+          curRM: trail[trail.length - 1]?.rm ?? 100,
+          curVol: avgVol
+        });
+      } catch(e) {
+        console.warn('Skipping', etf.ticker, e.message);
+      }
+    }
+    rrgData = results;
+    document.getElementById('rrg-last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-AR');
+    document.getElementById('rrg-period-label').textContent = `${weeks} semanas`;
+  } catch(e) {
+    console.error('RRG load error:', e);
+    alert('Error cargando datos: ' + e.message);
+  }
+
+  document.getElementById('rrg-loading').style.display = 'none';
+  drawRRG();
+}
+
+function resetRRG() {
+  document.getElementById('rrg-benchmark').value = 'SPY';
+  document.getElementById('rrg-weeks').value = '10';
+  rrgData = [];
+  drawRRG();
+}
+
+// ════════════════════════════════════════════════
+// RRG DRAW
+// ════════════════════════════════════════════════
+const QUADRANT_COLORS = {
+  leading:   '#00C896',
+  weakening: '#F5A623',
+  lagging:   '#E10600',
+  improving: '#4A90D9',
+};
+
+function quadrant(rs, rm) {
+  if (rs >= 100 && rm >= 100) return 'leading';
+  if (rs >= 100 && rm < 100)  return 'weakening';
+  if (rs < 100  && rm < 100)  return 'lagging';
+  return 'improving';
+}
+
+function drawRRG() {
+  const canvas = document.getElementById('rrg-canvas');
+  const wrapper = document.getElementById('rrg-wrapper');
+  const W = wrapper.clientWidth - 48;
+  const H = Math.max(480, Math.min(640, W * 0.62));
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#1A1A1E';
+  ctx.fillRect(0, 0, W, H);
+
+  const PAD = { top: 40, right: 40, bottom: 50, left: 50 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+  const cx = PAD.left + plotW / 2;
+  const cy = PAD.top + plotH / 2;
+
+  // Determine axis range
+  let allRS = rrgData.flatMap(d => d.trail.map(t => t.rs));
+  let allRM = rrgData.flatMap(d => d.trail.map(t => t.rm));
+  if (allRS.length === 0) { allRS = [97, 103]; allRM = [97, 103]; }
+  const pad = 1.5;
+  const rsMin = Math.min(97, Math.min(...allRS) - pad);
+  const rsMax = Math.max(103, Math.max(...allRS) + pad);
+  const rmMin = Math.min(97, Math.min(...allRM) - pad);
+  const rmMax = Math.max(103, Math.max(...allRM) + pad);
+  const rsRange = rsMax - rsMin;
+  const rmRange = rmMax - rmMin;
+
+  const toX = rs => PAD.left + (rs - rsMin) / rsRange * plotW;
+  const toY = rm => PAD.top + plotH - (rm - rmMin) / rmRange * plotH;
+
+  // Quadrant backgrounds
+  const qOpacity = 0.07;
+  const mid100x = toX(100), mid100y = toY(100);
+  ctx.fillStyle = `rgba(0,200,150,${qOpacity})`;
+  ctx.fillRect(mid100x, PAD.top, PAD.left + plotW - mid100x, mid100y - PAD.top);
+  ctx.fillStyle = `rgba(245,166,35,${qOpacity})`;
+  ctx.fillRect(mid100x, mid100y, PAD.left + plotW - mid100x, PAD.top + plotH - mid100y);
+  ctx.fillStyle = `rgba(225,6,0,${qOpacity})`;
+  ctx.fillRect(PAD.left, mid100y, mid100x - PAD.left, PAD.top + plotH - mid100y);
+  ctx.fillStyle = `rgba(74,144,217,${qOpacity})`;
+  ctx.fillRect(PAD.left, PAD.top, mid100x - PAD.left, mid100y - PAD.top);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let v = Math.ceil(rsMin); v <= rsMax; v++) {
+    const x = toX(v);
+    ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, PAD.top + plotH); ctx.stroke();
+  }
+  for (let v = Math.ceil(rmMin); v <= rmMax; v++) {
+    const y = toY(v);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + plotW, y); ctx.stroke();
+  }
+
+  // Center axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(mid100x, PAD.top); ctx.lineTo(mid100x, PAD.top + plotH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PAD.left, mid100y); ctx.lineTo(PAD.left + plotW, mid100y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Quadrant labels
+  const qlStyle = (color) => { ctx.fillStyle = color; ctx.font = '600 11px Montserrat, sans-serif'; ctx.globalAlpha = 0.5; };
+  qlStyle(QUADRANT_COLORS.leading);
+  ctx.textAlign = 'right'; ctx.fillText('LEADING', PAD.left + plotW - 8, PAD.top + 18);
+  qlStyle(QUADRANT_COLORS.weakening);
+  ctx.textAlign = 'right'; ctx.fillText('WEAKENING', PAD.left + plotW - 8, PAD.top + plotH - 8);
+  qlStyle(QUADRANT_COLORS.lagging);
+  ctx.textAlign = 'left'; ctx.fillText('LAGGING', PAD.left + 8, PAD.top + plotH - 8);
+  qlStyle(QUADRANT_COLORS.improving);
+  ctx.textAlign = 'left'; ctx.fillText('IMPROVING', PAD.left + 8, PAD.top + 18);
+  ctx.globalAlpha = 1;
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '500 10px Montserrat, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('RS-RATIO (Fuerza Relativa)', PAD.left + plotW / 2, H - 12);
+  ctx.save();
+  ctx.translate(14, PAD.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('RS-MOMENTUM (Velocidad)', 0, 0);
+  ctx.restore();
+
+  // Volume normalization for circle sizes
+  const vols = rrgData.map(d => d.curVol).filter(v => v > 0);
+  const maxVol = vols.length ? Math.max(...vols) : 1;
+  const minVol = vols.length ? Math.min(...vols) : 0;
+  const volToR = v => {
+    if (maxVol === minVol) return 14;
+    return 8 + ((v - minVol) / (maxVol - minVol)) * 20;
+  };
+
+  // Draw trails + circles
+  for (const d of rrgData) {
+    if (d.trail.length < 2) continue;
+    const color = QUADRANT_COLORS[quadrant(d.curRS, d.curRM)];
+    const r = volToR(d.curVol);
+
+    // Trail
+    ctx.beginPath();
+    d.trail.forEach((pt, i) => {
+      const x = toX(pt.rs), y = toY(pt.rm);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Trail dots (fading)
+    d.trail.slice(0, -1).forEach((pt, i) => {
+      const alpha = 0.1 + 0.5 * (i / d.trail.length);
+      ctx.beginPath();
+      ctx.arc(toX(pt.rs), toY(pt.rm), 3, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+
+    // Main circle
+    const cx2 = toX(d.curRS), cy2 = toY(d.curRM);
+    ctx.beginPath();
+    ctx.arc(cx2, cy2, r, 0, Math.PI * 2);
+    ctx.fillStyle = color + '30';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Ticker label
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `600 ${Math.max(9, Math.min(12, r))}px Montserrat, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.ticker, cx2, cy2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // Empty state
+  if (rrgData.length === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '500 14px Montserrat, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Presioná ▶ Actualizar para cargar datos', W/2, H/2);
+  }
+}
+
+// ════════════════════════════════════════════════
+// TOOLTIP on RRG canvas
+// ════════════════════════════════════════════════
+document.getElementById('rrg-canvas').addEventListener('mousemove', (e) => {
+  if (!rrgData.length) return;
+  const canvas = document.getElementById('rrg-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const tooltip = document.getElementById('rrg-tooltip');
+
+  const PAD = { top: 40, right: 40, bottom: 50, left: 50 };
+  const W = canvas.width, H = canvas.height;
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  let allRS = rrgData.flatMap(d => d.trail.map(t => t.rs));
+  let allRM = rrgData.flatMap(d => d.trail.map(t => t.rm));
+  if (!allRS.length) return;
+  const pad = 1.5;
+  const rsMin = Math.min(97, Math.min(...allRS) - pad);
+  const rsMax = Math.max(103, Math.max(...allRS) + pad);
+  const rmMin = Math.min(97, Math.min(...allRM) - pad);
+  const rmMax = Math.max(103, Math.max(...allRM) + pad);
+  const toX = rs => PAD.left + (rs - rsMin) / (rsMax - rsMin) * plotW;
+  const toY = rm => PAD.top + plotH - (rm - rmMin) / (rmMax - rmMin) * plotH;
+  const vols = rrgData.map(d => d.curVol).filter(v => v > 0);
+  const maxVol = vols.length ? Math.max(...vols) : 1;
+  const minVol = vols.length ? Math.min(...vols) : 0;
+  const volToR = v => maxVol === minVol ? 14 : 8 + ((v - minVol) / (maxVol - minVol)) * 20;
+
+  let hit = null;
+  for (const d of rrgData) {
+    const cx = toX(d.curRS), cy = toY(d.curRM);
+    const r = volToR(d.curVol);
+    if (Math.hypot(mx - cx, my - cy) <= r + 4) { hit = d; break; }
+  }
+
+  if (hit) {
+    const q = quadrant(hit.curRS, hit.curRM);
+    const qNames = { leading:'Leading', weakening:'Weakening', lagging:'Lagging', improving:'Improving' };
+    const qCol = QUADRANT_COLORS[q];
+    tooltip.innerHTML = `
+      <div class="tt-ticker" style="color:${qCol}">${hit.ticker}</div>
+      <div class="tt-row"><span>Cuadrante</span><span style="color:${qCol}">${qNames[q]}</span></div>
+      <div class="tt-row"><span>RS-Ratio</span><span>${hit.curRS.toFixed(2)}</span></div>
+      <div class="tt-row"><span>RS-Momentum</span><span>${hit.curRM.toFixed(2)}</span></div>
+      <div class="tt-row"><span>Volumen (4w avg)</span><span>${(hit.curVol/1e6).toFixed(1)}M</span></div>
+    `;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.offsetX + 16) + 'px';
+    tooltip.style.top = (e.offsetY - 20) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+document.getElementById('rrg-canvas').addEventListener('mouseleave', () => {
+  document.getElementById('rrg-tooltip').style.display = 'none';
+});
+
+// ════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════
+window.addEventListener('resize', drawRRG);
+drawRRG(); // Empty state on load
+</script>
+</body>
+</html>
