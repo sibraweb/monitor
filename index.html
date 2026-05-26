@@ -733,54 +733,44 @@ function filteredETFs() {
   return ETF_LIST.filter(e => activeCats.has(e.cat));
 }
 
-// RS-Ratio & RS-Momentum — fórmula JdK original con WMA doble
+// RS-Ratio & RS-Momentum — Z-score RRG-Lite
+// RS-Ratio   = (RS - mean(RS, 14)) / std(RS, 14) + 100
+// RS-Momentum = (ROC(RS,1) - mean(ROC,14)) / std(ROC,14) + 100
 function calcJdKRS(prices, benchPrices) {
   const minLen = Math.min(prices.length, benchPrices.length);
-  const relPrices = [];
+  const rs = [];
   for (let i = 0; i < minLen; i++) {
-    if (prices[i] && benchPrices[i]) relPrices.push(prices[i] / benchPrices[i]);
+    if (prices[i] && benchPrices[i]) rs.push(prices[i] / benchPrices[i]);
+    else rs.push(null);
   }
-  if (relPrices.length < 60) return null;
+  if (rs.filter(v => v != null).length < 30) return null;
 
-  // WMA helper — Weighted Moving Average
-  const wma = (arr, n) => {
+  // Z-score rolling helper
+  const zScore = (arr, n) => {
     const result = new Array(arr.length).fill(null);
     for (let i = n - 1; i < arr.length; i++) {
-      let num = 0, den = 0;
-      for (let j = 0; j < n; j++) {
-        const w = n - j;
-        num += arr[i - j] * w;
-        den += w;
-      }
-      result[i] = num / den;
+      const window = arr.slice(i - n + 1, i + 1).filter(v => v != null);
+      if (window.length < n) continue;
+      const mean = window.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(window.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+      if (std === 0) { result[i] = 100; continue; }
+      result[i] = ((arr[i] - mean) / std) + 100;
     }
     return result;
   };
 
-  const PERIOD = 10; // período estándar JdK
+  // ROC período a período del RS
+  const roc = rs.map((v, i) => {
+    if (i === 0 || v == null || rs[i - 1] == null || rs[i - 1] === 0) return null;
+    return (v / rs[i - 1] - 1) * 100;
+  });
 
-  // RS-Ratio = WMA( RS / WMA(RS, period), period ) × 100
-  const wmaRS = wma(relPrices, PERIOD);
-  const rsNorm = relPrices.map((v, i) =>
-    wmaRS[i] != null && wmaRS[i] !== 0 ? v / wmaRS[i] : null
-  );
-  const rsNormClean = rsNorm.map(v => v ?? 0);
-  const wmaRsNorm = wma(rsNormClean, PERIOD);
-  const rsRatio = wmaRsNorm.map(v => v != null ? v * 100 : null);
+  const N = 14;
+  const rsRatio    = zScore(rs, N);
+  const rsMomentum = zScore(roc, N);
 
-  // RS-Momentum = WMA( RS-Ratio / WMA(RS-Ratio, period), period ) × 100
-  const rsRatioClean = rsRatio.map(v => v ?? 0);
-  const wmaRsRatio = wma(rsRatioClean, PERIOD);
-  const rsMomNorm = rsRatio.map((v, i) =>
-    v != null && wmaRsRatio[i] != null && wmaRsRatio[i] !== 0
-      ? v / wmaRsRatio[i] : null
-  );
-  const rsMomClean = rsMomNorm.map(v => v ?? 0);
-  const wmaRsMom = wma(rsMomClean, PERIOD);
-  const rsMomentum = wmaRsMom.map(v => v != null ? v * 100 : null);
-
-  // Filtrar pares válidos
-  const pairs = rsRatio.map((rs, i) => ({ rs, rm: rsMomentum[i] }))
+  // Pares válidos
+  const pairs = rsRatio.map((v, i) => ({ rs: v, rm: rsMomentum[i] }))
     .filter(p => p.rs != null && p.rm != null);
 
   if (pairs.length < 10) return null;
