@@ -733,9 +733,9 @@ function filteredETFs() {
   return ETF_LIST.filter(e => activeCats.has(e.cat));
 }
 
-// RS-Ratio & RS-Momentum — Z-score RRG-Lite
-// RS-Ratio   = (RS - mean(RS, 14)) / std(RS, 14) + 100
-// RS-Momentum = (ROC(RS,1) - mean(ROC,14)) / std(ROC,14) + 100
+// RS-Ratio & RS-Momentum — Z-score RRG-Lite con ventanas diferenciadas
+// La clave para rotación clockwise: Momentum usa ventana CORTA, Ratio usa ventana LARGA
+// Momentum reacciona antes → lidera al Ratio → genera la curva
 function calcJdKRS(prices, benchPrices) {
   const minLen = Math.min(prices.length, benchPrices.length);
   const rs = [];
@@ -743,31 +743,48 @@ function calcJdKRS(prices, benchPrices) {
     if (prices[i] && benchPrices[i]) rs.push(prices[i] / benchPrices[i]);
     else rs.push(null);
   }
-  if (rs.filter(v => v != null).length < 30) return null;
+  const validCount = rs.filter(v => v != null).length;
+  if (validCount < 40) return null;
 
-  // Z-score rolling helper
-  const zScore = (arr, n) => {
-    const result = new Array(arr.length).fill(null);
-    for (let i = n - 1; i < arr.length; i++) {
-      const window = arr.slice(i - n + 1, i + 1).filter(v => v != null);
-      if (window.length < n) continue;
-      const mean = window.reduce((a, b) => a + b, 0) / n;
-      const std = Math.sqrt(window.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
-      if (std === 0) { result[i] = 100; continue; }
-      result[i] = ((arr[i] - mean) / std) + 100;
-    }
-    return result;
-  };
-
-  // ROC período a período del RS
-  const roc = rs.map((v, i) => {
-    if (i === 0 || v == null || rs[i - 1] == null || rs[i - 1] === 0) return null;
-    return (v / rs[i - 1] - 1) * 100;
+  // Media y std rolling
+  const rollingMean = (arr, n) => arr.map((_, i) => {
+    if (i < n - 1) return null;
+    const w = arr.slice(i - n + 1, i + 1).filter(v => v != null);
+    return w.length === n ? w.reduce((a,b) => a+b, 0) / n : null;
   });
 
-  const N = 14;
-  const rsRatio    = zScore(rs, N);
-  const rsMomentum = zScore(roc, N);
+  const rollingStd = (arr, n, means) => arr.map((v, i) => {
+    if (means[i] == null || v == null) return null;
+    const w = arr.slice(i - n + 1, i + 1).filter(v => v != null);
+    if (w.length < n) return null;
+    const m = means[i];
+    return Math.sqrt(w.reduce((a, b) => a + (b - m) ** 2, 0) / n) || 0.0001;
+  });
+
+  // RS-Ratio: Z-score de largo plazo (26 períodos) — reacciona lento
+  const N_RATIO = 26;
+  const meanRS  = rollingMean(rs, N_RATIO);
+  const stdRS   = rollingStd(rs, N_RATIO, meanRS);
+  const rsRatio = rs.map((v, i) =>
+    v != null && meanRS[i] != null && stdRS[i] != null
+      ? (v - meanRS[i]) / stdRS[i] + 100 : null
+  );
+
+  // RS-Momentum: Z-score de corto plazo (5 períodos) del ROC(4) — reacciona rápido
+  // ROC de 4 períodos: compara RS actual vs RS de hace 4 semanas
+  const ROC_PERIOD = 4;
+  const roc4 = rs.map((v, i) => {
+    if (i < ROC_PERIOD || v == null || rs[i - ROC_PERIOD] == null || rs[i - ROC_PERIOD] === 0) return null;
+    return (v / rs[i - ROC_PERIOD] - 1) * 100;
+  });
+
+  const N_MOM = 10;
+  const meanROC = rollingMean(roc4, N_MOM);
+  const stdROC  = rollingStd(roc4, N_MOM, meanROC);
+  const rsMomentum = roc4.map((v, i) =>
+    v != null && meanROC[i] != null && stdROC[i] != null
+      ? (v - meanROC[i]) / stdROC[i] + 100 : null
+  );
 
   // Pares válidos
   const pairs = rsRatio.map((v, i) => ({ rs: v, rm: rsMomentum[i] }))
